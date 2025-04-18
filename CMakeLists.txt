@@ -46,7 +46,7 @@ pico_enable_stdio_usb(Adquisicion_y_Filtrado_PICO_H 1)
 
 # Add the standard library to the build
 target_link_libraries(Adquisicion_y_Filtrado_PICO_H
-        pico_stdlib hardware_adc)
+        pico_stdlib hardware_adc hardware_dma)
 
 # Add the standard include files to the build
 target_include_directories(Adquisicion_y_Filtrado_PICO_H PRIVATE
