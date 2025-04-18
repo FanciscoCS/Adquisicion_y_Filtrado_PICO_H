@@ -35,7 +35,7 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(Adquisicion_y_Filtrado_PICO_H Adquisicion_y_Filtrado_PICO_H.c )
+add_executable(Adquisicion_y_Filtrado_PICO_H Adquisicion_y_Filtrado_PICO_H.c kissfft/kiss_fft.c)
 
 pico_set_program_name(Adquisicion_y_Filtrado_PICO_H "Adquisicion_y_Filtrado_PICO_H")
 pico_set_program_version(Adquisicion_y_Filtrado_PICO_H "0.1")
@@ -50,7 +50,7 @@ target_link_libraries(Adquisicion_y_Filtrado_PICO_H
 
 # Add the standard include files to the build
 target_include_directories(Adquisicion_y_Filtrado_PICO_H PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}
+        ${CMAKE_CURRENT_LIST_DIR}/kissfft
 )
 
 pico_add_extra_outputs(Adquisicion_y_Filtrado_PICO_H)

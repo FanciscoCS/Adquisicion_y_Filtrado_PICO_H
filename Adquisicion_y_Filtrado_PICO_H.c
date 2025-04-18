@@ -3,14 +3,35 @@
 #include "hardware/adc.h"
 #include "hardware/dma.h"
 #include "pico/time.h"
+#include "kiss_fft.h"
 
-#define NUM_MUESTRAS 100000
+#define NUM_MUESTRAS 4096
 
-//const long frecuencia_deseada = 100000; // 10 Khz
+#define frecuencia_deseada 100000 // 10 Khz
 const long frecuencia_adc = 48000000; // 48 Mhz
-float divisor = frecuencia_adc / NUM_MUESTRAS;
+float divisor = frecuencia_adc / frecuencia_deseada;
 
 uint16_t buffer_adc[NUM_MUESTRAS];
+float buffer_dma[NUM_MUESTRAS];
+kiss_fft_cpx in[NUM_MUESTRAS], out[NUM_MUESTRAS];
+float magnitude[NUM_MUESTRAS / 2];
+
+void compute_fft() {
+    kiss_fft_cfg cfg = kiss_fft_alloc(NUM_MUESTRAS, 0, NULL, NULL);
+    
+    for (int i = 0; i < NUM_MUESTRAS; i++) {
+        in[i].r = buffer_dma[i];
+        in[i].i = 0.0f;
+    }
+
+    kiss_fft(cfg, in, out);
+
+    for (int i = 0; i < NUM_MUESTRAS / 2; i++) {
+        magnitude[i] = sqrtf(out[i].r * out[i].r + out[i].i * out[i].i);
+    }
+
+    free(cfg);
+}
 
 int main() {
     stdio_init_all();
@@ -54,8 +75,6 @@ int main() {
 
     while (true) {
 
-        absolute_time_t inicio = get_absolute_time();
-
         // Reiniciar el canal DMA para una nueva transferencia
         dma_channel_set_read_addr(canal_dma, &adc_hw->fifo, false);
         dma_channel_set_write_addr(canal_dma, buffer_adc, false);
@@ -64,22 +83,24 @@ int main() {
         // Espera a que termine la transferencia
         dma_channel_wait_for_finish_blocking(canal_dma);
 
-        absolute_time_t fin = get_absolute_time();
-        int64_t tiempo = absolute_time_diff_us(inicio, fin);//Microsegundos
+        for (int i = 0; i < NUM_MUESTRAS; i++) {
+            buffer_dma[i] = (float)buffer_adc[i]; // Convert to float
+        }
 
-        float muestras_por_segundo = (NUM_MUESTRAS * 1e6f) / tiempo;
-        printf("Estimacion de Lecturas por segundo: %.2f\n", muestras_por_segundo);
+        compute_fft();
+
+        //for (int i = 0; i < NUM_MUESTRAS; i++) {
+        //    float voltaje = buffer_adc[i] * 3.3f / 4095.0f; 
+        //    printf("%.2f V\t\n", voltaje);
+        //}
+
+        for (int i = 0; i < NUM_MUESTRAS / 2; i++) {
+            float freq = i * frecuencia_deseada / NUM_MUESTRAS;
+            printf("Freq: %6.1f Hz | Mag: %6.2f\n", freq, magnitude[i]);
+        }
         printf("\n\n");
 
         sleep_ms(2000); // Espera antes de Imprimir y volver a leer
-
-        // Procesa y muestra los datos
-        printf("Muestras (en voltios):\n");
-        for (int i = 0; i < NUM_MUESTRAS; i++) {
-            float voltaje = buffer_adc[i] * 3.3f / 4095.0f;
-            printf("%.2f V\t", voltaje);
-        }
-        printf("\n\n");
 
     }
 
