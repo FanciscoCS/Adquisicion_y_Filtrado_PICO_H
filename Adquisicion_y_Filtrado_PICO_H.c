@@ -93,14 +93,15 @@ int main() {
         //    float voltaje = buffer_adc[i] * 3.3f / 4095.0f; 
         //    printf("%.2f V\t\n", voltaje);
         //}
-
+        printf("BEGIN");
         for (int i = 0; i < NUM_MUESTRAS / 2; i++) {
             float freq = i * frecuencia_deseada / NUM_MUESTRAS;
-            printf("Freq: %6.1f Hz | Mag: %6.2f\n", freq, magnitude[i]);
+            printf("%6.1f , %6.2f\n", freq, magnitude[i]);
         }
+        printf("END");
         printf("\n\n");
 
-        sleep_ms(2000); // Espera antes de Imprimir y volver a leer
+        sleep_ms(2000); // Espera antes de volver a leer
 
     }
 
