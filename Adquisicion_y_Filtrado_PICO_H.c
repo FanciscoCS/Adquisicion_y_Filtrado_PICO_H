@@ -4,17 +4,27 @@
 #include "hardware/dma.h"
 #include "pico/time.h"
 #include "kiss_fft.h"
+#include "math.h"
 
 #define NUM_MUESTRAS 4096
+#define PI 3.14159265358979323846
 
-#define frecuencia_deseada 100000 // 10 Khz
-const long frecuencia_adc = 48000000; // 48 Mhz
+int V = 0;
+double f1 = 0.0005f; //Frecuencia de Corte Normalizada
+double f2 = 0.02f; // Freciencia de corte Normalizada
+double h[NUM_MUESTRAS];
+double H[NUM_MUESTRAS/2];
+double y[NUM_MUESTRAS/2];
+
+#define frecuencia_deseada 10000.0 // 10 Khz
+const long frecuencia_adc = 48000000.0; // 48 Mhz
 float divisor = frecuencia_adc / frecuencia_deseada;
 
 uint16_t buffer_adc[NUM_MUESTRAS];
 float buffer_dma[NUM_MUESTRAS];
 kiss_fft_cpx in[NUM_MUESTRAS], out[NUM_MUESTRAS];
 float magnitude[NUM_MUESTRAS / 2];
+float freq[NUM_MUESTRAS];
 
 void compute_fft() {
     kiss_fft_cfg cfg = kiss_fft_alloc(NUM_MUESTRAS, 0, NULL, NULL);
@@ -26,11 +36,67 @@ void compute_fft() {
 
     kiss_fft(cfg, in, out);
 
-    for (int i = 0; i < NUM_MUESTRAS / 2; i++) {
+    for (int i = 0; i < NUM_MUESTRAS/2; i++) {
         magnitude[i] = sqrtf(out[i].r * out[i].r + out[i].i * out[i].i);
     }
 
     free(cfg);
+}
+
+void generar_filtro_pasabanda() {
+    //int M = (NUM_MUESTRAS- 1) / 2;
+
+    for (int n = 0; n < NUM_MUESTRAS; n++) {
+        float wn; // ventana de Hamming
+        float M = 2 * PI * n / (NUM_MUESTRAS - 1);
+
+        if (V == 0){
+            wn = 0.54f - 0.46f * cosf(M); //Ventana Hamming
+        } if (V == 1){
+            wn = 0.5f-(0.5f*cosf(M)); // ventana de Hanning
+        } if (V == 2){
+            wn = 0.42f - 5.0f * cosf(M) + 0.08f * cosf(M); // Ventana de Blackman
+        } if (V == 3){
+            wn = 0.54f - 0.46f * cosf(M); // Ventana de Bartlett (Triangular)
+        }
+        //printf("%6.1f" , wn);
+        
+        float sinc1, sinc2;
+        float t = n - ((NUM_MUESTRAS - 1)/2);
+
+        // Evitar división por cero en el centro del sinc
+        if (t == 0.0f) {
+            sinc1 = 2 * f2;
+            sinc2 = 2 * f1;
+        } else {
+            sinc1 = sinf(2 * PI * f2 * t) / (PI * t);
+            sinc2 = sinf(2 * PI * f1 * t) / (PI * t);
+        }
+
+        h[n] = (sinc1 - sinc2) * wn;
+        freq[n] = (float)n * frecuencia_deseada / NUM_MUESTRAS;
+    }
+}
+
+void Tansformar_Filtro() {
+    kiss_fft_cfg cfg = kiss_fft_alloc(NUM_MUESTRAS, 0, NULL, NULL);
+    for (int i = 0; i < NUM_MUESTRAS; i++ ){
+        in[i].r = h[i];
+        in[i].i = 0.0;
+    }
+    
+    kiss_fft(cfg, in, out);
+    free(cfg);
+
+    for (int i = 0; i < NUM_MUESTRAS / 2; i++) {
+        H[i] = sqrt(out[i].r * out[i].r + out[i].i * out[i].i);
+    }
+}
+
+void Multiplicacion() {
+    for (int n = 0; n < NUM_MUESTRAS/2; n++) {
+        y[n] = magnitude[n] * H[n];
+    }
 }
 
 int main() {
@@ -85,10 +151,16 @@ int main() {
 
         for (int i = 0; i < NUM_MUESTRAS; i++) {
             buffer_dma[i] = (float)buffer_adc[i]; // Convert to float
-            buffer_dma[i] = buffer_dma[i] * 3.3f / 4095.0f
+            buffer_dma[i] = buffer_dma[i] * 3.3f / 4095.0f;
         }
 
         compute_fft();
+
+        generar_filtro_pasabanda();
+
+        Tansformar_Filtro();
+
+        Multiplicacion();
 
         //for (int i = 0; i < NUM_MUESTRAS; i++) {
         //    float voltaje = buffer_adc[i] * 3.3f / 4095.0f; 
@@ -96,13 +168,12 @@ int main() {
         //}
         printf("BEGIN\n");
         for (int i = 0; i < NUM_MUESTRAS / 2; i++) {
-            float freq = i * frecuencia_deseada / NUM_MUESTRAS;
-            printf("%6.1f,%6.2f\n", freq, magnitude[i]);
+            printf("%6.1f,%6.2f\n", freq[i], y[i]);
         }
         printf("END");
         //printf("\n\n");
 
-        sleep_ms(2000); // Espera antes de volver a leer
+        sleep_ms(1000); // Espera antes de volver a leer
 
     }
 
