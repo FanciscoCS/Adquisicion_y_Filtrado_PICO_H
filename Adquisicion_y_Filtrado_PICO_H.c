@@ -9,12 +9,19 @@
 #define NUM_MUESTRAS 4096
 #define PI 3.14159265358979323846
 
+int Select = 1;
 int V = 0;
 double f1 = 0.0005f; //Frecuencia de Corte Normalizada
 double f2 = 0.02f; // Freciencia de corte Normalizada
 double h[NUM_MUESTRAS];
 double H[NUM_MUESTRAS/2];
 double y[NUM_MUESTRAS/2];
+
+float output[NUM_MUESTRAS];
+typedef struct {
+    float x1, x2; // Entradas anteriores
+    float y1, y2; // Salidas anteriores
+} FilterState;
 
 #define frecuencia_deseada 10000.0 // 10 Khz
 const long frecuencia_adc = 48000000.0; // 48 Mhz
@@ -25,6 +32,7 @@ float buffer_dma[NUM_MUESTRAS];
 kiss_fft_cpx in[NUM_MUESTRAS], out[NUM_MUESTRAS];
 float magnitude[NUM_MUESTRAS / 2];
 float freq[NUM_MUESTRAS];
+float tiempo[NUM_MUESTRAS];
 
 void compute_fft() {
     kiss_fft_cfg cfg = kiss_fft_alloc(NUM_MUESTRAS, 0, NULL, NULL);
@@ -99,6 +107,52 @@ void Multiplicacion() {
     }
 }
 
+void Coeficientes_Pasabanda(float fs,
+                          float *b0, float *b1, float *b2,
+                          float *a1, float *a2) {
+    float f0 = sqrtf(f1 * f2);              // Frecuencia central
+    float Q = f0 / (f2 - f1);               // Calidad (factor Q)
+    float omega = 2.0f * M_PI * f0 / fs;
+    float sin_omega = sinf(omega);
+    float cos_omega = cosf(omega);
+    float alpha = sin_omega / (2.0f * Q);
+
+    float a0 = 1.0f + alpha;
+    *b0 = alpha / a0;
+    *b1 = 0.0f;
+    *b2 = -alpha / a0;
+    *a1 = -2.0f * cos_omega / a0;
+    *a2 = (1.0f - alpha) / a0;
+}
+
+float Filtro_Pasabanda(float x, FilterState *s,
+                      float b0, float b1, float b2, float a1, float a2) {
+    float y = b0 * x + b1 * s->x1 + b2 * s->x2
+                   - a1 * s->y1 - a2 * s->y2;
+
+    s->x2 = s->x1;
+    s->x1 = x;
+    s->y2 = s->y1;
+    s->y1 = y;
+
+    return y;
+}
+
+float Transformada (){
+        kiss_fft_cfg cfg = kiss_fft_alloc(NUM_MUESTRAS, 0, NULL, NULL);
+    for (int i = 0; i < NUM_MUESTRAS; i++ ){
+        in[i].r = output[i];
+        in[i].i = 0.0;
+    }
+    
+    kiss_fft(cfg, in, out);
+    free(cfg);
+
+    for (int i = 0; i < NUM_MUESTRAS / 2; i++) {
+        y[i] = sqrt(out[i].r * out[i].r + out[i].i * out[i].i);
+    }
+}
+
 int main() {
     stdio_init_all();
     sleep_ms(3000); // Tiempo para que se conecte la consola USB
@@ -154,24 +208,43 @@ int main() {
             buffer_dma[i] = buffer_dma[i] * 3.3f / 4095.0f;
         }
 
-        compute_fft();
+        if(Select = 0){
+            compute_fft();
 
-        generar_filtro_pasabanda();
+            generar_filtro_pasabanda();
 
-        Tansformar_Filtro();
+            Tansformar_Filtro();
 
-        Multiplicacion();
+            Multiplicacion();
+        }if (Select = 1){
+            float b0, b1, b2, a1, a2;
+            Coeficientes_Pasabanda(frecuencia_deseada, &b0, &b1, &b2, &a1, &a2);
 
-        //for (int i = 0; i < NUM_MUESTRAS; i++) {
-        //    float voltaje = buffer_adc[i] * 3.3f / 4095.0f; 
-        //    printf("%.2f V\t\n", voltaje);
-        //}
+            FilterState state = {0};
+            for (int i = 0; i < NUM_MUESTRAS; i++) {
+                output[i] = Filtro_Pasabanda(buffer_dma[i], &state, b0, b1, b2, a1, a2);
+            }
+
+            //Transformada();
+        }
+
+        // Espectro de Frecuencia
+        /*
         printf("BEGIN\n");
         for (int i = 0; i < NUM_MUESTRAS / 2; i++) {
             printf("%6.1f,%6.2f\n", freq[i], y[i]);
         }
         printf("END");
         //printf("\n\n");
+        */
+
+        //Espectro de Tiempo
+        printf("BEGIN\n");
+        for (int i = 0; i < NUM_MUESTRAS / 2; i++) {
+            printf("%6.1f\n", output[i]);
+        }
+        printf("END");
+        printf("\n");
 
         sleep_ms(1000); // Espera antes de volver a leer
 
